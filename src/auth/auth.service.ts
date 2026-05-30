@@ -3,16 +3,6 @@ import { UsersService } from '../users/users.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import * as bcrypt from 'bcryptjs';
 
-interface UserDocument {
-  _id: unknown;
-  email: string;
-  password?: string;
-  name?: string;
-  role?: string;
-  is_first_login?: boolean;
-  level?: string;
-}
-
 @Injectable()
 export class AuthService {
   constructor(private readonly usersService: UsersService) {}
@@ -22,8 +12,7 @@ export class AuthService {
   }
 
   async login(email: string, password: string) {
-    const users = (await this.usersService.findAll()) as UserDocument[];
-    const user = users.find((u) => u.email === email);
+    const user = await this.usersService.findOneByEmail(email);
 
     if (!user || !user.password) {
       throw new UnauthorizedException(

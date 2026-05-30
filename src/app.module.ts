@@ -11,7 +11,11 @@ import { BattlesModule } from './battles/battles.module';
       isGlobal: true,
     }),
 
-    MongooseModule.forRoot(process.env.MONGO_URI!),
+    MongooseModule.forRootAsync({
+      useFactory: () => ({
+        uri: process.env.MONGO_URI,
+      }),
+    }),
 
     AuthModule,
     UsersModule,
