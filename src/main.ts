@@ -7,6 +7,11 @@ async function bootstrap() {
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
-  await app.listen(3000);
+  app.enableCors();
+
+  const port = process.env.PORT || 3000;
+  await app.listen(port);
+
+  console.log(` Server đang chạy tại: http://localhost:${port}`);
 }
 void bootstrap();
