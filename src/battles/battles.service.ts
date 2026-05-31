@@ -25,6 +25,9 @@ import { BattleStatus } from './enums/battle-status.enum';
 
 import { MatchmakingService } from './matchmaking/matchmaking.service';
 
+import { BadRequestException } from '@nestjs/common';
+import { SubmitAnswerDto } from './dto/submit-answer.dto';
+
 @Injectable()
 export class BattlesService {
   constructor(
@@ -37,52 +40,10 @@ export class BattlesService {
     private readonly matchmakingService: MatchmakingService,
   ) {}
 
-  // async createBattle(userId: string, dto: CreateBattleDto) {
-  //   const timeLimit = dto.mode == BattleMode.SPEED ? 600 : 1800;
-
-  //   const battle = await this.battleModel.create({
-  //     mode: dto.mode,
-  //     field: dto.field,
-  //     status: BattleStatus.WAITING,
-  //     players: [
-  //       {
-  //         userId: new Types.ObjectId(userId),
-  //         score: 0,
-  //         isReady: false,
-  //       },
-  //     ],
-  //     questions: [],
-  //     timeLimit,
-  //     startTime: new Date(),
-  //   });
-
-  //   return Battle;
-  // }
-
   async createBattle(
     user: { userId: string; username: string; avatar?: string },
     dto: CreateBattleDto,
   ) {
-    // const timeLimit = dto.mode === BattleMode.SPEED ? 600 : 1800;
-
-    // const battle = await this.battleModel.create({
-    //   mode: dto.mode,
-    //   field: dto.field,
-    //   status: BattleStatus.WAITING,
-    //   players: [
-    //     {
-    //       userId: new Types.ObjectId(user.userId),
-    //       username: user.username,
-    //       avatar: user.avatar,
-    //       currentScore: 0,
-    //       hasSubmitted: false,
-    //       joinedAt: new Date(),
-    //     },
-    //   ],
-    //   questions: [],
-    //   timeLimit,
-    // });
-
     return this.matchmakingService.findOrCreate({
       userId: user.userId,
       username: user.username,
@@ -145,5 +106,165 @@ export class BattlesService {
       .limit(limit)
       .lean();
     return rankings;
+  }
+
+  async submitAnswer(battleId: string, userId: string, dto: SubmitAnswerDto) {
+    if (!Types.ObjectId.isValid(battleId)) {
+      throw new NotFoundException('Battle not found');
+    }
+
+    const battle = await this.battleModel.findById(battleId);
+    if (!battle) {
+      throw new NotFoundException('Battle not found');
+    }
+
+    if (battle.status !== BattleStatus.IN_PROGRESS) {
+      throw new BadRequestException('Battle is not in progress');
+    }
+
+    const playerIndex = battle.players.findIndex(
+      (p) => p.userId.toString() === userId,
+    );
+    if (playerIndex == -1) {
+      throw new ForbiddenException('You are not a player of this battle');
+    }
+
+    const question = battle.questions.find(
+      (p) => p.questionId.toString() == dto.questionId,
+    );
+    if (!question) {
+      throw new BadRequestException('Question not found in this battle');
+    }
+
+    const existingSubmission = await this.submissionModel.findOne({
+      battleId: new Types.ObjectId(battleId),
+      userId: new Types.ObjectId(userId),
+      questionId: new Types.ObjectId(dto.questionId),
+      isCorrect: true,
+    });
+
+    if (existingSubmission) {
+      throw new BadRequestException(
+        'You already answered this question correctly',
+      );
+    }
+
+    const isCorrect =
+      dto.answer.trim() === (question.correctAnswer ?? '').trim();
+
+    const player = battle.players[playerIndex];
+    const newScore = isCorrect
+      ? player.currentScore + 10
+      : Math.max(0, player.currentScore - 3);
+    const pointsChange = newScore - player.currentScore;
+
+    await Promise.all([
+      this.submissionModel.create({
+        battleId: new Types.ObjectId(battleId),
+        userId: new Types.ObjectId(userId),
+        questionId: new Types.ObjectId(dto.questionId),
+        answer: dto.answer,
+        isCorrect,
+        points: pointsChange,
+        timeSpent: 0,
+      }),
+      this.battleModel.findByIdAndUpdate(battleId, {
+        $set: {
+          [`players.${playerIndex}.currentScore`]: newScore,
+        },
+      }),
+    ]);
+
+    const correctCount = await this.submissionModel.countDocuments({
+      battleId: new Types.ObjectId(battleId),
+      userId: new Types.ObjectId(userId),
+      isCorrect: true,
+    });
+
+    if (correctCount >= battle.questions.length) {
+      await this.battleModel.findByIdAndUpdate(battleId, {
+        $set: { [`players.${playerIndex}.hasSubmitted`]: true },
+      });
+
+      const updatedBattle = await this.battleModel.findByIdAndUpdate(
+        battleId,
+        { $set: { [`players.${playerIndex}.hasSubmitted`]: true } },
+        { new: true }, // ← trả về document SAU khi update
+      );
+      const allDone = updatedBattle?.players.every((p) => p.hasSubmitted);
+
+      if (allDone) {
+        await this.endBattle(battleId);
+      }
+    }
+    return {
+      isCorrect,
+      points: pointsChange,
+      currentScore: newScore,
+      currentQuestionIndex: correctCount,
+      message: isCorrect ? 'Correct' : 'Wrong answer, -3 points',
+    };
+  }
+
+  async endBattle(battleId: string) {
+    const battle = await this.battleModel.findById(battleId);
+    if (!battle) {
+      throw new NotFoundException('Battle not found');
+    }
+    if (battle.status !== BattleStatus.IN_PROGRESS) {
+      throw new BadRequestException('Battle is not in progress');
+    }
+
+    const [p1, p2] = battle.players;
+    const isDraw = p1.currentScore === p2.currentScore;
+    const winner = isDraw ? null : p1.currentScore > p2.currentScore ? p1 : p2;
+    const loser = isDraw
+      ? null
+      : winner?.userId.toString() === p1.userId.toString()
+        ? p2
+        : p1;
+
+    const finalScores = battle.players.map((p) => ({
+      userId: p.userId.toString(),
+      username: p.username,
+      score: p.currentScore,
+    }));
+
+    await this.battleModel.findByIdAndUpdate(battleId, {
+      $set: {
+        status: BattleStatus.COMPLETED,
+        endTime: new Date(),
+        result: {
+          winnerId: winner?.userId ?? null,
+          isDraw,
+          finalScores,
+        },
+      },
+    });
+
+    return {
+      battleId,
+      isDraw,
+      winner: winner
+        ? { userId: winner.userId.toString(), username: winner.username }
+        : null,
+      loser: loser
+        ? { userId: loser.userId.toString(), username: loser.username }
+        : null,
+      finalScores,
+    };
+  }
+  async getSubmissions(battleId: string, userId?: string) {
+    if (!Types.ObjectId.isValid(battleId)) {
+      throw new NotFoundException('Battle not foun');
+    }
+    const filter: Record<string, unknown> = {
+      battleId: new Types.ObjectId(battleId),
+    };
+    if (userId && Types.ObjectId.isValid(userId)) {
+      filter.userId = new Types.ObjectId(userId);
+    }
+
+    return this.submissionModel.find(filter).sort({ submittedAt: 1 }).lean();
   }
 }
