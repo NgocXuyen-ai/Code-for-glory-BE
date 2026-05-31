@@ -11,6 +11,9 @@ import {
 } from './schemas/battle-submission.schema';
 import { UserRanking, UserRankingSchema } from './schemas/user-ranking.schema';
 
+import { MatchmakingService } from './matchmaking/matchmaking.service';
+import { MockQuestionsService } from './matchmaking/mock-questions.service';
+
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -20,7 +23,7 @@ import { UserRanking, UserRankingSchema } from './schemas/user-ranking.schema';
     ]),
   ],
   controllers: [BattlesController],
-  providers: [BattlesService],
+  providers: [BattlesService, MatchmakingService, MockQuestionsService],
   exports: [BattlesService],
 })
 export class BattlesModule {}

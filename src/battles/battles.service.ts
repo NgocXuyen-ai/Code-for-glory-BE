@@ -21,8 +21,9 @@ import { CreateBattleDto } from './dto/create-battle.dto';
 import { GetHistoryDto } from './dto/get-history.dto';
 import { GetLeaderboardDto } from './dto/get-leaderboard.dto';
 
-import { BattleMode } from './enums/battle-mode.enum';
 import { BattleStatus } from './enums/battle-status.enum';
+
+import { MatchmakingService } from './matchmaking/matchmaking.service';
 
 @Injectable()
 export class BattlesService {
@@ -33,6 +34,7 @@ export class BattlesService {
     private readonly submissionModel: Model<BattleSubmissionsDocument>,
     @InjectModel(UserRanking.name)
     private readonly rankingModel: Model<UserRankingDocument>,
+    private readonly matchmakingService: MatchmakingService,
   ) {}
 
   // async createBattle(userId: string, dto: CreateBattleDto) {
@@ -61,27 +63,33 @@ export class BattlesService {
     user: { userId: string; username: string; avatar?: string },
     dto: CreateBattleDto,
   ) {
-    const timeLimit = dto.mode === BattleMode.SPEED ? 600 : 1800;
+    // const timeLimit = dto.mode === BattleMode.SPEED ? 600 : 1800;
 
-    const battle = await this.battleModel.create({
+    // const battle = await this.battleModel.create({
+    //   mode: dto.mode,
+    //   field: dto.field,
+    //   status: BattleStatus.WAITING,
+    //   players: [
+    //     {
+    //       userId: new Types.ObjectId(user.userId),
+    //       username: user.username,
+    //       avatar: user.avatar,
+    //       currentScore: 0,
+    //       hasSubmitted: false,
+    //       joinedAt: new Date(),
+    //     },
+    //   ],
+    //   questions: [],
+    //   timeLimit,
+    // });
+
+    return this.matchmakingService.findOrCreate({
+      userId: user.userId,
+      username: user.username,
+      avatar: user.avatar,
       mode: dto.mode,
       field: dto.field,
-      status: BattleStatus.WAITING,
-      players: [
-        {
-          userId: new Types.ObjectId(user.userId),
-          username: user.username,
-          avatar: user.avatar,
-          currentScore: 0,
-          hasSubmitted: false,
-          joinedAt: new Date(),
-        },
-      ],
-      questions: [],
-      timeLimit,
     });
-
-    return battle;
   }
   async getBattleById(battleId: string, userId: string) {
     if (!Types.ObjectId.isValid(battleId)) {
