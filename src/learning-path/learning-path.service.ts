@@ -51,6 +51,7 @@ export class LearningPathService {
       title: dto.title,
       order: dto.order,
       theory: dto.theory,
+      quizzes: dto.quizzes,
     });
   }
 

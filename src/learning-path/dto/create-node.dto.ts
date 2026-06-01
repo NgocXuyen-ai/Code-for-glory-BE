@@ -5,9 +5,21 @@ import {
   IsString,
   IsInt,
   IsMongoId,
+  IsArray,
+  IsNumber,
+  Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { NodeType } from '../enums/node-type.enum';
 
+export class QuizDto {
+  @IsNotEmpty() @IsString() question!: string;
+
+  @IsArray() @IsString({ each: true }) options!: string[];
+
+  @IsNumber() @Min(0) answerIndex!: number;
+}
 export class CreateNodeDto {
   @IsNotEmpty() @IsEnum(NodeType) type!: NodeType;
 
@@ -18,4 +30,10 @@ export class CreateNodeDto {
   @IsOptional() @IsInt() order?: number;
 
   @IsOptional() @IsString() theory?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => QuizDto)
+  quizzes?: QuizDto[];
 }

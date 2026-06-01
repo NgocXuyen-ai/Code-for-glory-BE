@@ -1,6 +1,18 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose'; // ← add Types
-import { NodeType } from '../enums/node-type.enum'; // ← your node-type enum
+import { Document, Types } from 'mongoose';
+import { NodeType } from '../enums/node-type.enum';
+
+@Schema({ _id: false })
+export class Quiz {
+  @Prop({ required: true })
+  question!: string;
+
+  @Prop({ type: [String], required: true })
+  options!: string[];
+
+  @Prop({ required: true, min: 0 })
+  answerIndex!: number;
+}
 
 @Schema({ timestamps: true })
 export class LearningNode extends Document {
@@ -17,6 +29,9 @@ export class LearningNode extends Document {
   @Prop({ default: 0 }) order?: number;
 
   @Prop({}) theory?: string;
+
+  @Prop({ type: [Quiz], default: [] }) quizzes?: Quiz[];
 }
 
+export const QuizSchema = SchemaFactory.createForClass(Quiz);
 export const LearningNodeSchema = SchemaFactory.createForClass(LearningNode);
