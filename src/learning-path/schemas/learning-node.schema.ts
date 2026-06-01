@@ -31,6 +31,12 @@ export class LearningNode extends Document {
   @Prop({}) theory?: string;
 
   @Prop({ type: [Quiz], default: [] }) quizzes?: Quiz[];
+
+  @Prop() problemStatement?: string;
+
+  @Prop() starterCode?: string;
+
+  @Prop() expectedOutput?: string;
 }
 
 export const QuizSchema = SchemaFactory.createForClass(Quiz);

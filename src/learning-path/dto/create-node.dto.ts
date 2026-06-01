@@ -36,4 +36,10 @@ export class CreateNodeDto {
   @ValidateNested({ each: true })
   @Type(() => QuizDto)
   quizzes?: QuizDto[];
+
+  @IsOptional() @IsString() problemStatement?: string;
+
+  @IsOptional() @IsString() starterCode?: string;
+
+  @IsOptional() @IsString() expectedOutput?: string;
 }

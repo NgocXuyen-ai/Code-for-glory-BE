@@ -52,6 +52,9 @@ export class LearningPathService {
       order: dto.order,
       theory: dto.theory,
       quizzes: dto.quizzes,
+      problemStatement: dto.problemStatement,
+      starterCode: dto.starterCode,
+      expectedOutput: dto.expectedOutput,
     });
   }
 
