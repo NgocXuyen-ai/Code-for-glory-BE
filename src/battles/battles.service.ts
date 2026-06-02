@@ -262,13 +262,14 @@ export class BattlesService {
       finalScores,
     };
 
+    await this.updateRankings(battle, winner?.userId ?? null, isDraw);
+
     this.stopBattleTimer(battleId);
     this.gateway.notifyBattleEnded(battleId, {
       winnerId: winner?.userId.toString(),
       isDraw,
       finalScores,
     });
-
     return endResult;
   }
   async getSubmissions(battleId: string, userId?: string) {
@@ -341,6 +342,8 @@ export class BattlesService {
       },
     });
 
+    await this.updateRankings(battle, opponent?.userId ?? null, false);
+
     this.stopBattleTimer(battleId);
 
     this.gateway.notifyBattleEnded(battleId, {
@@ -348,10 +351,42 @@ export class BattlesService {
       isDraw: false,
       finalScores,
     });
-
     return {
       message: 'Battle abandoned',
       winnerId: opponent?.userId.toString(),
     };
+  }
+
+  private async updateRankings(
+    battle: BattleDocument,
+    winnerId: Types.ObjectId | null,
+    isDraw: boolean,
+  ) {
+    const updates = battle.players.map(async (p) => {
+      const isWinner = !isDraw && winnerId?.toString() === p.userId.toString();
+      const isLoser = !isDraw && !isWinner;
+
+      const updated = await this.rankingModel
+        .findOneAndUpdate(
+          { userId: p.userId, field: battle.field },
+          {
+            $inc: {
+              totalBattles: 1,
+              wins: isWinner ? 1 : 0,
+              losses: isLoser ? 1 : 0,
+              draws: isDraw ? 1 : 0,
+            },
+          },
+          { upsert: true, new: true },
+        )
+        .lean();
+      const winRate =
+        updated.totalBattles > 0 ? updated.wins / updated.totalBattles : 0;
+
+      await this.rankingModel.findByIdAndUpdate(updated._id, {
+        $set: { winRate },
+      });
+    });
+    await Promise.all(updates);
   }
 }
