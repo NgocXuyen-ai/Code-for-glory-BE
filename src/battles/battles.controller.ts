@@ -61,6 +61,11 @@ export class BattlesController {
     return this.battlesService.endBattle(id);
   }
 
+  @Post(':id/abandon')
+  abandon(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
+    return this.battlesService.abandonBattle(id, user.userId);
+  }
+
   @Get(':id')
   getOne(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
     return this.battlesService.getBattleById(id, user.userId);

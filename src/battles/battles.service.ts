@@ -32,6 +32,7 @@ import { BattlesGateway } from './battles.gateway';
 
 @Injectable()
 export class BattlesService {
+  private readonly battleTimers = new Map<string, NodeJS.Timeout>();
   constructor(
     @InjectModel(Battle.name)
     private readonly battleModel: Model<BattleDocument>,
@@ -47,13 +48,18 @@ export class BattlesService {
     user: { userId: string; username: string; avatar?: string },
     dto: CreateBattleDto,
   ) {
-    return this.matchmakingService.findOrCreate({
+    const battle = await this.matchmakingService.findOrCreate({
       userId: user.userId,
       username: user.username,
       avatar: user.avatar,
       mode: dto.mode,
       field: dto.field,
     });
+
+    if (battle.status === BattleStatus.IN_PROGRESS) {
+      this.startBattleTimer(String(battle._id), battle.timeLimit);
+    }
+    return battle;
   }
   async getBattleById(battleId: string, userId: string) {
     if (!Types.ObjectId.isValid(battleId)) {
@@ -179,7 +185,6 @@ export class BattlesService {
     ]);
 
     if (isCorrect) {
-      // Tìm index câu hỏi này trong battle để truyền questionOrder
       const questionOrder = battle.questions.findIndex(
         (q) => q.questionId.toString() === dto.questionId,
       );
@@ -257,6 +262,7 @@ export class BattlesService {
       finalScores,
     };
 
+    this.stopBattleTimer(battleId);
     this.gateway.notifyBattleEnded(battleId, {
       winnerId: winner?.userId.toString(),
       isDraw,
@@ -277,5 +283,75 @@ export class BattlesService {
     }
 
     return this.submissionModel.find(filter).sort({ submittedAt: 1 }).lean();
+  }
+
+  startBattleTimer(battleId: string, timeLimit: number) {
+    if (this.battleTimers.has(battleId)) return;
+
+    let timeRemaining = timeLimit;
+
+    const interval = setInterval(() => {
+      timeRemaining--;
+      this.gateway.pushTimerTick(battleId, timeRemaining);
+
+      if (timeRemaining <= 0) {
+        this.stopBattleTimer(battleId);
+        this.endBattle(battleId).catch(() => {});
+      }
+    }, 1000);
+    this.battleTimers.set(battleId, interval);
+  }
+  stopBattleTimer(battleId: string) {
+    const interval = this.battleTimers.get(battleId);
+    if (interval) {
+      clearInterval(interval);
+      this.battleTimers.delete(battleId);
+    }
+  }
+  async abandonBattle(battleId: string, userId: string) {
+    if (!Types.ObjectId.isValid(battleId))
+      throw new NotFoundException('Battle not found');
+
+    const battle = await this.battleModel.findById(battleId);
+    if (!battle) throw new NotFoundException('Battle not found');
+    if (
+      battle.status !== BattleStatus.IN_PROGRESS &&
+      battle.status !== BattleStatus.COMPLETED
+    ) {
+      throw new BadRequestException('Battle already ended');
+    }
+
+    const opponent = battle.players.find((p) => p.userId.toString() !== userId);
+
+    const finalScores = battle.players.map((p) => ({
+      userId: p.userId.toString(),
+      userName: p.username,
+      score: p.currentScore,
+    }));
+
+    await this.battleModel.findByIdAndUpdate(battleId, {
+      $set: {
+        status: BattleStatus.ABANDONED,
+        endTime: new Date(),
+        result: {
+          winnerId: opponent?.userId ?? null,
+          isDraw: false,
+          finalScores,
+        },
+      },
+    });
+
+    this.stopBattleTimer(battleId);
+
+    this.gateway.notifyBattleEnded(battleId, {
+      winnerId: opponent?.userId.toString(),
+      isDraw: false,
+      finalScores,
+    });
+
+    return {
+      message: 'Battle abandoned',
+      winnerId: opponent?.userId.toString(),
+    };
   }
 }
